@@ -1,0 +1,6 @@
+<launch>
+  <group ns="vision_pkg">
+    <include file="$(find realsense2_camera)/launch/rs_camera.launch"/>
+	<node pkg="depth_node" type="depth_node" name="depth_node"/>
+  </group>
+</launch>
