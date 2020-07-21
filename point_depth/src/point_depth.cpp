@@ -3,6 +3,7 @@
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/opencv.hpp"
+#include <iostream>
 #include <cmath>
 #include "sensor_msgs/PointCloud.h"
 #include "sensor_msgs/point_cloud_conversion.h"
@@ -13,12 +14,11 @@ typedef sensor_msgs::PointCloud& PointMsg;
 class PointCloud{
 	ros::NodeHandle nh_;
 	ros::Subscriber sub;
-	double output[3];
+	double output[3] = {999, 999, 999};
 	vector<vector<Point3d>> point_segments;
 	Mat *mean_filter;
 	vector<int> Z_Index;
 	sensor_msgs::PointCloud point_img;
-	void PointToSlope();
 	int PointCloudMax_Xaxis(sensor_msgs::PointCloud& input);
 	int PointCloudMax_Yaxis(sensor_msgs::PointCloud& input);
 	void PointCloud2ToPointCloud(const sensor_msgs::PointCloud2& msg,sensor_msgs::PointCloud& point_img,int resize);
@@ -57,7 +57,17 @@ void PointCloud::PointDepthCb(const sensor_msgs::PointCloud2& msg)
 {
 	origin = Point2ToMat(msg);
 	if(!origin.empty()){
-		PointToSlope();
+		float min_max[2];
+		output[0] = 999;
+		output[1] = 999;
+		output[2] = 999;
+		PointZ_MinMax(point_img,min_max);
+		PointHistogram(point_img, min_max, Z_Index);
+		PointToSegment(point_img, Z_Index, point_segments);
+		while(output[0] == 999 && output[1] == 999 & output[2] == 999){
+			SelectPoint(point_segments, SelectedPoint);
+			op_zaxis(SelectedPoint, output);
+		}
 		cout<<output[0]<<", "<<output[1]<<", "<<output[2]<<endl;
 		cout<<SelectedPoint[0].x<<", "<<SelectedPoint[0].y<<", "<<SelectedPoint[0].z<<endl;
 		cout<<SelectedPoint[1].x<<", "<<SelectedPoint[1].y<<", "<<SelectedPoint[1].z<<endl;
@@ -66,8 +76,8 @@ void PointCloud::PointDepthCb(const sensor_msgs::PointCloud2& msg)
 		cout<<acosf(output[2]) * 180 / CV_PI<<endl;;
 		origin.convertTo(origin, CV_8U);
 		cvtColor(origin, origin, COLOR_GRAY2BGR);
-		//for(int i = 0; i < SelectedPoint.size(); i++)
-		//	circle(origin,Point(SelectedPoint[i].x + 320, SelectedPoint[i].y + 240), 1, Scalar(255,0,0),2);
+		for(int i = 0; i < SelectedPoint.size(); i++)
+			circle(origin,Point((int)SelectedPoint[i].x + 320, (int)SelectedPoint[i].y + 240), 2, Scalar(255,0,0),2);
 		/*for(int i=0;i<point_img.points.size();i++)
 			cout<<point_img.points[i].z<<endl;*/
 		imshow("origin", origin);
@@ -76,14 +86,6 @@ void PointCloud::PointDepthCb(const sensor_msgs::PointCloud2& msg)
 		Z_Index.clear();
 		SelectedPoint.clear();	
 	}
-}
-void PointCloud::PointToSlope(){
-	float min_max[2];
-	PointZ_MinMax(point_img,min_max);
-	PointHistogram(point_img, min_max, Z_Index);
-	PointToSegment(point_img, Z_Index, point_segments);
-	SelectPoint(point_segments, SelectedPoint);
-	op_zaxis(SelectedPoint, output);
 }
 void PointCloud::SelectPoint(vector<vector<Point3d>>& point_segments, vector<Point3d>& SelectedPoint){
 	int Seg_Size = point_segments[0].size();
@@ -97,22 +99,24 @@ void PointCloud::SelectPoint(vector<vector<Point3d>>& point_segments, vector<Poi
 	double gap_1, gap_2, gap_3;
 	SelectedPoint.clear();
 	while(SelectedPoint.size() != 4 && count != 100){
+		unsigned int rand_count = (unsigned int)ros::Time::now().nsec;
+		srand(rand_count);
 		random = rand() % Seg_Size;
 		FirstSelect = Point3d(point_segments[0][random]);
 		for(int i = 0; i < Seg_Size; i++){
 			SecondSelect = point_segments[0][i];
-			gap_1 = abs(sqrt((FirstSelect.x-SecondSelect.x)*(FirstSelect.x-SecondSelect.x)+(FirstSelect.y-SecondSelect.y)*(FirstSelect.y-SecondSelect.y))-((double)10.00 * sqrt(2)));
+			gap_1 = abs(sqrt((FirstSelect.x-SecondSelect.x)*(FirstSelect.x-SecondSelect.x)+(FirstSelect.y-SecondSelect.y)*(FirstSelect.y-SecondSelect.y))-((double)20.00 * sqrt(2)));
 			if(gap_1 <= (double)1.00){
 				for(int j = 0; j < Seg_Size; j++){
 					ThirdSelect = point_segments[0][j];
-					gap_1 = abs(sqrt((FirstSelect.x-ThirdSelect.x)*(FirstSelect.x-ThirdSelect.x)+(FirstSelect.y-ThirdSelect.y)*(FirstSelect.y-ThirdSelect.y))-(double)10.00);
-					gap_2 = abs(sqrt((SecondSelect.x-ThirdSelect.x)*(SecondSelect.x-ThirdSelect.x)+(SecondSelect.y-ThirdSelect.y)*(SecondSelect.y-ThirdSelect.y))-(double)10.00);
+					gap_1 = abs(sqrt((FirstSelect.x-ThirdSelect.x)*(FirstSelect.x-ThirdSelect.x)+(FirstSelect.y-ThirdSelect.y)*(FirstSelect.y-ThirdSelect.y))-(double)20.00);
+					gap_2 = abs(sqrt((SecondSelect.x-ThirdSelect.x)*(SecondSelect.x-ThirdSelect.x)+(SecondSelect.y-ThirdSelect.y)*(SecondSelect.y-ThirdSelect.y))-(double)20.00);
 					if(gap_1 <= (double)1.00 && gap_2 <= (double)1.00){
 						for(int k = 0; k < Seg_Size; k++){
 							FourthSelect = point_segments[0][k];
-							gap_1 = abs(sqrt((FirstSelect.x-FourthSelect.x)*(FirstSelect.x-FourthSelect.x)+(FirstSelect.y-FourthSelect.y)*(FirstSelect.y-FourthSelect.y))-(double)10.00);
-							gap_2 = abs(sqrt((SecondSelect.x-FourthSelect.x)*(SecondSelect.x-FourthSelect.x)+(SecondSelect.y-FourthSelect.y)*(SecondSelect.y-FourthSelect.y))-(double)10.00);
-							gap_3 = abs(sqrt((ThirdSelect.x-FourthSelect.x)*(ThirdSelect.x-FourthSelect.x)+(ThirdSelect.y-FourthSelect.y)*(ThirdSelect.y-FourthSelect.y))-((double)10.00 * sqrt(2)));
+							gap_1 = abs(sqrt((FirstSelect.x-FourthSelect.x)*(FirstSelect.x-FourthSelect.x)+(FirstSelect.y-FourthSelect.y)*(FirstSelect.y-FourthSelect.y))-(double)20.00);
+							gap_2 = abs(sqrt((SecondSelect.x-FourthSelect.x)*(SecondSelect.x-FourthSelect.x)+(SecondSelect.y-FourthSelect.y)*(SecondSelect.y-FourthSelect.y))-(double)20.00);
+							gap_3 = abs(sqrt((ThirdSelect.x-FourthSelect.x)*(ThirdSelect.x-FourthSelect.x)+(ThirdSelect.y-FourthSelect.y)*(ThirdSelect.y-FourthSelect.y))-((double)20.00 * sqrt(2)));
 							if(gap_1 <= (double)1.00 && gap_2 <= (double)1.00 && gap_3 <= (double)1.00){
 								SelectedPoint.push_back(FirstSelect);
 								SelectedPoint.push_back(SecondSelect);
@@ -218,133 +222,70 @@ void PointCloud::op_zaxis(vector<Point3d>& SelectedPoint, double output[3]){
 			cross_vector_4.y *= -1;
 			cross_vector_4.z *= -1;
 		}
-		if(cross_vector_1.x > 0 && cross_vector_2.x > 0 && cross_vector_3.x > 0 && cross_vector_4.x > 0)
-		if((cross_vector_1.z > 0 && cross_vector_2.z < 0) || (cross_vector_1.z < 0 && cross_vector_2.z > 0)){
-			cross_vector_2.x *= -1;
-			cross_vector_2.y *= -1;
-			cross_vector_2.z *= -1;
-			if(cross_vector_1.x > 0 && cross_vector_2.x > 0){
-				if(cross_vector_1.y > 0 && cross_vector_2.y > 0){
-					output[0] = cross_vector_1.x + cross_vector_2.x;
-					output[1] = cross_vector_1.y + cross_vector_2.y;
-					output[2] = cross_vector_1.z + cross_vector_2.z;
-					norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
-					output[0] /= norm;
-					output[1] /= norm;
-					output[2] /= norm;
-				}
-				else if(cross_vector_1.y < 0 && cross_vector_2.y < 0){
-					output[0] = cross_vector_1.x + cross_vector_2.x;
-					output[1] = cross_vector_1.y + cross_vector_2.y;
-					output[2] = cross_vector_1.z + cross_vector_2.z;
-					norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
-					output[0] /= norm;
-					output[1] /= norm;
-					output[2] /= norm;
-				}
-				else{
-					output[0] = 999;
-					output[1] = 999;
-					output[2] = 999;
-					cout << "Not Found Point" << endl;
-				}
+		if(cross_vector_1.x > 0 && cross_vector_2.x > 0 && cross_vector_3.x > 0 && cross_vector_4.x > 0){
+			if(cross_vector_1.y > 0 && cross_vector_2.y > 0 && cross_vector_3.y > 0 && cross_vector_4.y > 0){
+				output[0] = cross_vector_1.x + cross_vector_2.x + cross_vector_3.x + cross_vector_4.x;
+				output[1] = cross_vector_1.y + cross_vector_2.y + cross_vector_3.y + cross_vector_4.y;
+				output[2] = cross_vector_1.z + cross_vector_2.z + cross_vector_3.z + cross_vector_4.z;
+				norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
+				output[0] /= norm;
+				output[1] /= norm;
+				output[2] /= norm;
 			}
-			else if(cross_vector_1.x < 0 && cross_vector_2.x < 0){
-				if(cross_vector_1.y > 0 && cross_vector_2.y > 0){
-					output[0] = cross_vector_1.x + cross_vector_2.x;
-					output[1] = cross_vector_1.y + cross_vector_2.y;
-					output[2] = cross_vector_1.z + cross_vector_2.z;
-					norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
-					output[0] /= norm;
-					output[1] /= norm;
-					output[2] /= norm;
-				}
-				else if(cross_vector_1.y < 0 && cross_vector_2.y < 0){
-					output[0] = cross_vector_1.x + cross_vector_2.x;
-					output[1] = cross_vector_1.y + cross_vector_2.y;
-					output[2] = cross_vector_1.z + cross_vector_2.z;
-					norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
-					output[0] /= norm;
-					output[1] /= norm;
-					output[2] /= norm;
-				}
-				else{
-					output[0] = 999;
-					output[1] = 999;
-					output[2] = 999;
-					cout << "Not Found Point" << endl;
-				}
+			else if(cross_vector_1.y < 0 && cross_vector_2.y < 0 && cross_vector_3.y < 0 && cross_vector_4.y < 0){
+				output[0] = cross_vector_1.x + cross_vector_2.x + cross_vector_3.x + cross_vector_4.x;
+				output[1] = cross_vector_1.y + cross_vector_2.y + cross_vector_3.y + cross_vector_4.y;
+				output[2] = cross_vector_1.z + cross_vector_2.z + cross_vector_3.z + cross_vector_4.z;
+				norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
+				output[0] /= norm;
+				output[1] /= norm;
+				output[2] /= norm;
 			}
 			else{
 				output[0] = 999;
 				output[1] = 999;
 				output[2] = 999;
-				cout << "Not Found Point" << endl;
+				//cout << "Not Found Point" << endl;
 			}
 		}
-		else if((cross_vector_1.z > 0 && cross_vector_2.z > 0) || (cross_vector_1.z < 0 && cross_vector_2.z < 0)){
-			if(cross_vector_1.x > 0 && cross_vector_2.x > 0){
-				if(cross_vector_1.y > 0 && cross_vector_2.y > 0){
-					output[0] = cross_vector_1.x + cross_vector_2.x;
-					output[1] = cross_vector_1.y + cross_vector_2.y;
-					output[2] = cross_vector_1.z + cross_vector_2.z;
-					norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
-					output[0] /= norm;
-					output[1] /= norm;
-					output[2] /= norm;
-				}
-				else if(cross_vector_1.y < 0 && cross_vector_2.y < 0){
-					output[0] = cross_vector_1.x + cross_vector_2.x;
-					output[1] = cross_vector_1.y + cross_vector_2.y;
-					output[2] = cross_vector_1.z + cross_vector_2.z;
-					norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
-					output[0] /= norm;
-					output[1] /= norm;
-					output[2] /= norm;
-				}
-				else{
-					output[0] = 999;
-					output[1] = 999;
-					output[2] = 999;
-					cout << "Not Found Point" << endl;
-				}
+		else if(cross_vector_1.x < 0 && cross_vector_2.x < 0 && cross_vector_3.x < 0 && cross_vector_4.x < 0){
+			if(cross_vector_1.y > 0 && cross_vector_2.y > 0 && cross_vector_3.y > 0 && cross_vector_4.y > 0){
+				output[0] = cross_vector_1.x + cross_vector_2.x + cross_vector_3.x + cross_vector_4.x;
+				output[1] = cross_vector_1.y + cross_vector_2.y + cross_vector_3.y + cross_vector_4.y;
+				output[2] = cross_vector_1.z + cross_vector_2.z + cross_vector_3.z + cross_vector_4.z;
+				norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
+				output[0] /= norm;
+				output[1] /= norm;
+				output[2] /= norm;
 			}
-			else if(cross_vector_1.x < 0 && cross_vector_2.x < 0){
-				if(cross_vector_1.y > 0 && cross_vector_2.y > 0){
-					output[0] = cross_vector_1.x + cross_vector_2.x;
-					output[1] = cross_vector_1.y + cross_vector_2.y;
-					output[2] = cross_vector_1.z + cross_vector_2.z;
-					norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
-					output[0] /= norm;
-					output[1] /= norm;
-					output[2] /= norm;
-				}
-				else if(cross_vector_1.y < 0 && cross_vector_2.y < 0){
-					output[0] = cross_vector_1.x + cross_vector_2.x;
-					output[1] = cross_vector_1.y + cross_vector_2.y;
-					output[2] = cross_vector_1.z + cross_vector_2.z;
-					norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
-					output[0] /= norm;
-					output[1] /= norm;
-					output[2] /= norm;
-				}
-				else{
-					output[0] = 999;
-					output[1] = 999;
-					output[2] = 999;
-					cout << "Not Found Point" << endl;
-				}
+			else if(cross_vector_1.y < 0 && cross_vector_2.y < 0 && cross_vector_3.y < 0 && cross_vector_4.y < 0){
+				output[0] = cross_vector_1.x + cross_vector_2.x + cross_vector_3.x + cross_vector_4.x;
+				output[1] = cross_vector_1.y + cross_vector_2.y + cross_vector_3.y + cross_vector_4.y;
+				output[2] = cross_vector_1.z + cross_vector_2.z + cross_vector_3.z + cross_vector_4.z;
+				norm = sqrt(output[0]*output[0] + output[1]*output[1] +output[2]*output[2]);
+				output[0] /= norm;
+				output[1] /= norm;
+				output[2] /= norm;
 			}
 			else{
 				output[0] = 999;
 				output[1] = 999;
 				output[2] = 999;
-				cout << "Not Found Point" << endl;
+				//cout << "Not Found Point" << endl;
 			}
+		}
+		else{
+			output[0] = 999;
+			output[1] = 999;
+			output[2] = 999;
+			//cout << "Not Found Point" << endl;
 		}
 	}
 	else{
-		cout<<"No Selected Point"<<endl;
+		output[0] = 999;
+		output[1] = 999;
+		output[2] = 999;
+		//cout<<"No Selected Point"<<endl;
 	}
 }
 void PointCloud::PointToSegment(PointMsg point_img, vector<int>& Z_Index, vector<vector<Point3d>>& point_segments){ 
